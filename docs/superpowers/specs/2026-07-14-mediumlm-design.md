@@ -20,6 +20,16 @@ Medium membership, and wants this to work even when their MacBook is
 locked (so it can't depend on live, interactive browser automation at
 request time).
 
+**Clarifying what "works while locked" actually means:** the request must
+still be *issued* while the machine is unlocked and Claude Code has an
+active session — there is no way to send Claude a prompt on a locked
+screen. What "on-demand only" + "works while locked" together guarantee is
+that the *run itself*, once started, needs no interactive browser and no
+unlocked screen to complete — e.g. you kick off a research request, then
+lock your machine, and it finishes unattended. It is not a scheduled/
+autonomous trigger (see Non-goals) and it cannot be started from a locked
+screen.
+
 ## Non-goals
 
 - Not a general web scraper — scoped to medium.com only.
@@ -50,6 +60,18 @@ Pulls Medium-domain cookies out of the local Chrome cookie store (via
 `browser_cookie3` or `rookiepy`, the same technique `notebooklm-py` uses
 for `--browser-cookies`). Writes them to `~/.mediumlm/cookies.json`.
 Run manually whenever Medium logs the session out or rotates cookies.
+
+**Secret handling (required, not optional):**
+- The file is written with `0600` permissions — it is a bearer-token-
+  equivalent secret (session hijack risk if leaked), not casual config.
+- `cookies extract` refuses to write into any path under a git-tracked
+  directory (checks for a `.git` in an ancestor of the target path) and
+  errors out instead, telling the user to point `--path` somewhere
+  untracked. Default path (`~/.mediumlm/`) is outside any repo, so this
+  only matters if the default is overridden.
+- The `mediumlm` project repo's `.gitignore` excludes the default cookie
+  directory pattern, build artifacts, and virtualenvs from the start —
+  before any code lands, not retrofitted after a near-miss commit.
 
 ### `mediumlm cookies check`
 Makes a real request to a logged-in-only Medium endpoint (e.g. the
@@ -84,6 +106,32 @@ article text (readability/trafilatura-style extraction), and returns:
   isn't a Medium member, or cookies are for a different account), this
   must be flagged rather than silently returned as if it were the full
   article.
+- an `access_reason` string when not `"full"` — distinguishes "cookies
+  expired," "account isn't a member," and "response looks like a bot
+  challenge/block page," since all three currently collapse into the same
+  observable "preview" state and are not actionable the same way.
+
+**Core feasibility is not yet proven — spike before implementation.**
+This design assumes cookies + a plain HTTP client (no browser engine) are
+sufficient to retrieve full member-only article content. That is not
+verified. Medium is a client-rendered React app with its own bot
+detection, and `notebooklm-py` — the closest precedent in this codebase —
+uses full Playwright browser automation for the analogous
+authenticated-content problem, not raw cookies over HTTP. Before the
+implementation plan is written, spike this end-to-end against one real
+member-only Medium article:
+1. `cookies extract`
+2. a bare `httpx`/`requests` GET with those cookies against that URL
+3. confirm the response contains the full article body, not a
+   preview/paywall/challenge page
+
+If the spike fails, this design's `fetch` component needs to move to a
+headless-browser fetch (e.g. Playwright with the extracted cookies
+injected into a browser context) instead of raw HTTP. That is still
+compatible with "no interactive/unlocked screen required during the
+run" — headless browsers don't need a display — so the rest of this
+spec's data flow and outputs are unaffected either way; only the
+internals of `fetch` change.
 
 ## Data Flow — `/mediumlm <topic>`
 
@@ -97,9 +145,15 @@ article text (readability/trafilatura-style extraction), and returns:
    - **Chat answer** — a synthesized summary/answer to the user's
      question, built directly from the fetched article text.
    - **Saved research note** — written to
-     `docs/research/medium/<topic-slug>-<YYYY-MM-DD>.md` (in the
-     *calling* project, not the mediumlm repo), containing: the list of
-     sources with URLs, key excerpts/quotes, and the synthesized summary.
+     `docs/research/medium/<topic-slug>-<YYYY-MM-DD>.md`, containing: the
+     list of sources with URLs, key excerpts/quotes, and the synthesized
+     summary. Path resolution: if Claude is working inside a project that
+     already has a `docs/` convention, the note goes there; otherwise it
+     defaults to `~/Work/docs/research/medium/`. (No `docs/research/`
+     convention exists anywhere in this workspace yet as of this spec —
+     confirmed by checking `~/Work/docs/`, which only has
+     `docs/superpowers/` — so this path will be created on first use, not
+     appended to an existing one.)
    - **NotebookLM artifacts (on request only)** — if the user asks for a
      podcast/audio overview, mind map, or study guide, Claude adds the
      fetched sources into a NotebookLM notebook via the existing
@@ -120,6 +174,13 @@ article text (readability/trafilatura-style extraction), and returns:
   articles.
 - **Rate limiting / CAPTCHA from Medium**: surfaced as an explicit error;
   no silent retry loop or exponential hammering.
+- **Account-risk acknowledgment**: automated, cookie-based access to
+  Medium likely falls outside Medium's Terms of Service. Repeated
+  bot-like request patterns risk more than a single failed request — they
+  risk the session being invalidated or the account being flagged/
+  restricted. This tool is for personal research use against your own
+  account, kept low-volume (single-topic, on-demand runs), not bulk
+  scraping.
 
 ## Testing
 
@@ -149,6 +210,12 @@ don't require hitting real Medium and can run in CI.
 
 ## Open Questions
 
-None blocking implementation. The Medium search endpoint (GraphQL vs.
-fallback) will be resolved during implementation and does not change the
-external CLI contract either way.
+- **Blocking:** does cookie + plain-HTTP `fetch` actually return full
+  member-only article content? Must be spiked before the implementation
+  plan is written (see `fetch` component above). If it fails, `fetch`
+  moves to a headless-browser implementation — the rest of this spec is
+  unaffected.
+- Non-blocking: the exact Medium search endpoint (GraphQL vs. the
+  documented `WebSearch` fallback) will be resolved during
+  implementation and does not change the external CLI contract either
+  way.
