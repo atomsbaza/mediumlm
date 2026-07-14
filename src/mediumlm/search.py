@@ -1,6 +1,14 @@
 """Search Medium via its own search page, driven through the same
 headless-browser mechanism proven for fetch (see the design spec's
-Open Questions — resolved section)."""
+Open Questions — resolved section).
+
+Unlike fetch, search deliberately runs unauthenticated: live testing
+showed Medium's search-results page populates via an async GraphQL
+call that returns 403 for authenticated (cookied) requests but
+succeeds for unauthenticated ones, likely due to stricter bot/CSRF
+protection on privileged endpoints. Paywall/membership resolution
+still happens correctly downstream, in fetch_article, which does use
+the real session."""
 from __future__ import annotations
 
 import re
@@ -59,6 +67,20 @@ def parse_search_results(html: str) -> List[SearchResult]:
 
 
 def search(query: str, cookies: List[dict], limit: int = 8) -> List[SearchResult]:
+    """Search Medium for `query` and return candidate articles.
+
+    Deliberately fetches the search page unauthenticated (ignores
+    `cookies`) rather than with the caller's session. Live testing
+    against real Medium showed search results are populated by an
+    async GraphQL call that returns 403 for authenticated (cookied)
+    requests — likely stricter bot/CSRF protection on privileged
+    endpoints — while the identical request succeeds and returns real
+    public results when unauthenticated. `cookies` is kept as a
+    parameter for CLI signature compatibility, but intentionally not
+    forwarded here. Paywall/membership resolution still happens
+    correctly downstream in fetch_article, which does use the real
+    session.
+    """
     url = SEARCH_URL_TEMPLATE.format(query=quote(query))
-    page = browser_mod.fetch_page(url, cookies)
+    page = browser_mod.fetch_page(url, cookies=[])
     return parse_search_results(page.html)[:limit]

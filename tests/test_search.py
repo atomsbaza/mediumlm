@@ -52,3 +52,25 @@ def test_search_orchestration_applies_limit(monkeypatch):
     results = search.search("mcp", cookies=[], limit=1)
 
     assert len(results) == 1
+
+
+def test_search_ignores_caller_cookies_and_fetches_unauthenticated(monkeypatch):
+    html = (FIXTURES / "search_results.html").read_text()
+    captured_cookies = []
+
+    class FakePage:
+        status = 200
+        final_url = "https://medium.com/search?q=mcp"
+        title = "mcp - Medium Search"
+
+    FakePage.html = html
+
+    def fake_fetch_page(url, cookies):
+        captured_cookies.append(cookies)
+        return FakePage()
+
+    monkeypatch.setattr("mediumlm.browser.fetch_page", fake_fetch_page)
+
+    search.search("mcp", cookies=[{"name": "sid", "value": "real-session-cookie"}], limit=8)
+
+    assert captured_cookies == [[]]
