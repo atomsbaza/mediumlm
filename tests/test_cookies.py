@@ -101,7 +101,7 @@ def test_check_cookies_detects_signin_redirect(tmp_path, monkeypatch):
     assert result["authenticated"] is False
 
 
-def test_check_cookies_detects_non_200_status(tmp_path, monkeypatch):
+def test_check_cookies_raises_on_non_200_status(tmp_path, monkeypatch):
     cookie_path = tmp_path / "cookies.json"
     cookie_path.write_text(json.dumps(
         [{"name": "sid", "value": "x", "domain": ".medium.com", "path": "/", "secure": True}]
@@ -115,9 +115,8 @@ def test_check_cookies_detects_non_200_status(tmp_path, monkeypatch):
 
     monkeypatch.setattr("mediumlm.browser.fetch_page", lambda url, cookies: FakePage())
 
-    result = cookies.check_cookies(path=cookie_path)
-
-    assert result["authenticated"] is False
+    with pytest.raises(RuntimeError):
+        cookies.check_cookies(path=cookie_path)
 
 
 def test_check_cookies_missing_file_raises(tmp_path):

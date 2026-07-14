@@ -86,10 +86,22 @@ def check_cookies(path: Optional[Path] = None) -> dict:
     checking the post-navigation URL is more reliable than scanning
     page text for "sign in" (which appears on logged-in pages too, in
     nav menus).
+
+    Raises RuntimeError if the check request itself failed (non-200
+    status) — this must not be conflated with "not authenticated,"
+    since a transient network/rate-limit failure with perfectly valid
+    cookies would otherwise be misdiagnosed as a stale session needing
+    re-extraction.
     """
     from . import browser as browser_mod
 
     loaded = load_cookies(path=path)
     page = browser_mod.fetch_page(CHECK_URL, loaded)
-    authenticated = page.status == 200 and "/m/signin" not in page.final_url
+    if page.status != 200:
+        raise RuntimeError(
+            f"cookies check failed (status {page.status}) — this is not "
+            "the same as being unauthenticated; the request itself did "
+            "not succeed"
+        )
+    authenticated = "/m/signin" not in page.final_url
     return {"authenticated": authenticated, "final_url": page.final_url}
