@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import json
 import os
-import stat
 from pathlib import Path
 from typing import List, Optional
 
@@ -59,9 +58,15 @@ def extract_cookies(browser: str = "chrome", path: Optional[Path] = None) -> Lis
         for c in jar
     ]
 
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(json.dumps(extracted, indent=2))
-    os.chmod(target, stat.S_IRUSR | stat.S_IWUSR)
+    target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    # Create the file at 0600 from the first byte via a custom opener,
+    # rather than write_text() followed by os.chmod(): the latter leaves
+    # a window where the file exists at the default umask (typically
+    # 0644, world/group-readable) before permissions are narrowed. For a
+    # bearer-token-equivalent secret, it must never exist looser than
+    # 0600, even momentarily.
+    with open(target, "w", opener=lambda p, flags: os.open(p, flags, 0o600)) as f:
+        json.dump(extracted, f, indent=2)
     return extracted
 
 
@@ -86,5 +91,5 @@ def check_cookies(path: Optional[Path] = None) -> dict:
 
     loaded = load_cookies(path=path)
     page = browser_mod.fetch_page(CHECK_URL, loaded)
-    authenticated = "/m/signin" not in page.final_url
+    authenticated = page.status == 200 and "/m/signin" not in page.final_url
     return {"authenticated": authenticated, "final_url": page.final_url}

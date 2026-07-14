@@ -101,6 +101,25 @@ def test_check_cookies_detects_signin_redirect(tmp_path, monkeypatch):
     assert result["authenticated"] is False
 
 
+def test_check_cookies_detects_non_200_status(tmp_path, monkeypatch):
+    cookie_path = tmp_path / "cookies.json"
+    cookie_path.write_text(json.dumps(
+        [{"name": "sid", "value": "x", "domain": ".medium.com", "path": "/", "secure": True}]
+    ))
+
+    class FakePage:
+        status = 403
+        final_url = "https://medium.com/me/settings"
+        title = "Just a moment..."
+        html = "<html></html>"
+
+    monkeypatch.setattr("mediumlm.browser.fetch_page", lambda url, cookies: FakePage())
+
+    result = cookies.check_cookies(path=cookie_path)
+
+    assert result["authenticated"] is False
+
+
 def test_check_cookies_missing_file_raises(tmp_path):
     with pytest.raises(cookies.CookiesNotFoundError):
         cookies.check_cookies(path=tmp_path / "nope.json")
