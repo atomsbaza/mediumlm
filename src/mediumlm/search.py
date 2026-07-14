@@ -6,7 +6,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from typing import List
-from urllib.parse import quote
+from urllib.parse import quote, urljoin, urlsplit, urlunsplit
 
 from bs4 import BeautifulSoup
 
@@ -16,14 +16,27 @@ SEARCH_URL_TEMPLATE = "https://medium.com/search?q={query}"
 
 # Medium article URLs end in a dash followed by a lowercase-hex slug
 # hash (e.g. "...-b9f433b82a5b"); this reliably distinguishes article
-# links from nav/profile/search-again links on the results page.
-ARTICLE_HREF_RE = re.compile(r"-[0-9a-f]{12}(?:\?.*)?$")
+# links from nav/profile/search-again links on the results page. The
+# boundary after the hash may be end-of-string, a path separator, a
+# query string, or a fragment.
+ARTICLE_HREF_RE = re.compile(r"-[0-9a-f]{12}(?=$|[/?#])")
 
 
 @dataclass
 class SearchResult:
     title: str
     url: str
+
+
+def _normalize_article_url(href: str) -> str:
+    """Resolve a possibly-relative href to an absolute Medium URL with
+    its query string (e.g. Medium's positional tracking param) and
+    fragment stripped, so equivalent links dedupe and every result is
+    directly fetchable by browser.fetch_page (which requires absolute
+    URLs)."""
+    absolute = urljoin("https://medium.com/", href)
+    split = urlsplit(absolute)
+    return urlunsplit((split.scheme, split.netloc, split.path, "", ""))
 
 
 def parse_search_results(html: str) -> List[SearchResult]:
@@ -35,10 +48,13 @@ def parse_search_results(html: str) -> List[SearchResult]:
         if not ARTICLE_HREF_RE.search(href):
             continue
         title = a.get_text(strip=True)
-        if not title or href in seen:
+        if not title:
             continue
-        seen.add(href)
-        results.append(SearchResult(title=title, url=href))
+        url = _normalize_article_url(href)
+        if url in seen:
+            continue
+        seen.add(url)
+        results.append(SearchResult(title=title, url=url))
     return results
 
 
