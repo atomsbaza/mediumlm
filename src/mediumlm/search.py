@@ -14,13 +14,21 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from typing import List
-from urllib.parse import quote, urljoin, urlsplit, urlunsplit
+from urllib.parse import quote_plus, urljoin, urlsplit, urlunsplit
 
 from bs4 import BeautifulSoup
 
 from . import browser as browser_mod
 
 SEARCH_URL_TEMPLATE = "https://medium.com/search?q={query}"
+
+# Medium's search-results stream renders asynchronously after the
+# initial page load (unlike article pages, which are server-rendered
+# into the initial HTML), so it needs longer than browser.py's default
+# settle_ms=2000 to populate with real results instead of just
+# sitewide footer links. fetch_article and cookies.check_cookies don't
+# need this extra wait, so it's set here rather than in browser.py.
+SEARCH_SETTLE_MS = 6000
 
 # Medium article URLs end in a dash followed by a lowercase-hex slug
 # hash (e.g. "...-b9f433b82a5b"); this reliably distinguishes article
@@ -81,6 +89,6 @@ def search(query: str, cookies: List[dict], limit: int = 8) -> List[SearchResult
     correctly downstream in fetch_article, which does use the real
     session.
     """
-    url = SEARCH_URL_TEMPLATE.format(query=quote(query))
-    page = browser_mod.fetch_page(url, cookies=[])
+    url = SEARCH_URL_TEMPLATE.format(query=quote_plus(query))
+    page = browser_mod.fetch_page(url, cookies=[], settle_ms=SEARCH_SETTLE_MS)
     return parse_search_results(page.html)[:limit]

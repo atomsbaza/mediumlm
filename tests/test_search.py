@@ -47,7 +47,9 @@ def test_search_orchestration_applies_limit(monkeypatch):
 
     FakePage.html = html
 
-    monkeypatch.setattr("mediumlm.browser.fetch_page", lambda url, cookies: FakePage())
+    monkeypatch.setattr(
+        "mediumlm.browser.fetch_page", lambda url, cookies, settle_ms=2000: FakePage()
+    )
 
     results = search.search("mcp", cookies=[], limit=1)
 
@@ -65,7 +67,7 @@ def test_search_ignores_caller_cookies_and_fetches_unauthenticated(monkeypatch):
 
     FakePage.html = html
 
-    def fake_fetch_page(url, cookies):
+    def fake_fetch_page(url, cookies, settle_ms=2000):
         captured_cookies.append(cookies)
         return FakePage()
 
@@ -74,3 +76,51 @@ def test_search_ignores_caller_cookies_and_fetches_unauthenticated(monkeypatch):
     search.search("mcp", cookies=[{"name": "sid", "value": "real-session-cookie"}], limit=8)
 
     assert captured_cookies == [[]]
+
+
+def test_search_encodes_query_spaces_as_plus_not_percent20(monkeypatch):
+    html = (FIXTURES / "search_results.html").read_text()
+    captured_urls = []
+
+    class FakePage:
+        status = 200
+        final_url = "https://medium.com/search?q=claude+code+mcp"
+        title = "claude code mcp - Medium Search"
+
+    FakePage.html = html
+
+    def fake_fetch_page(url, cookies, settle_ms=2000):
+        captured_urls.append(url)
+        return FakePage()
+
+    monkeypatch.setattr("mediumlm.browser.fetch_page", fake_fetch_page)
+
+    search.search("claude code mcp", cookies=[], limit=8)
+
+    assert len(captured_urls) == 1
+    assert "claude+code+mcp" in captured_urls[0]
+    assert "claude%20code%20mcp" not in captured_urls[0]
+
+
+def test_search_uses_longer_settle_time_than_browser_default(monkeypatch):
+    html = (FIXTURES / "search_results.html").read_text()
+    captured_settle_ms = []
+
+    class FakePage:
+        status = 200
+        final_url = "https://medium.com/search?q=mcp"
+        title = "mcp - Medium Search"
+
+    FakePage.html = html
+
+    def fake_fetch_page(url, cookies, settle_ms=2000):
+        captured_settle_ms.append(settle_ms)
+        return FakePage()
+
+    monkeypatch.setattr("mediumlm.browser.fetch_page", fake_fetch_page)
+
+    search.search("mcp", cookies=[], limit=8)
+
+    assert len(captured_settle_ms) == 1
+    assert captured_settle_ms[0] > 2000
+    assert captured_settle_ms[0] == search.SEARCH_SETTLE_MS
