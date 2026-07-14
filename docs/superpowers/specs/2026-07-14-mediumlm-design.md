@@ -208,14 +208,32 @@ loading/validation logic, HTML-to-markdown extraction given saved sample
 HTML fixtures, and the full/preview access-detection heuristic — these
 don't require hitting real Medium and can run in CI.
 
-## Open Questions
+## Open Questions — resolved
 
-- **Blocking:** does cookie + plain-HTTP `fetch` actually return full
-  member-only article content? Must be spiked before the implementation
-  plan is written (see `fetch` component above). If it fails, `fetch`
-  moves to a headless-browser implementation — the rest of this spec is
-  unaffected.
-- Non-blocking: the exact Medium search endpoint (GraphQL vs. the
+- **Fetch mechanism spike (2026-07-14): FAILED, mechanism revised.**
+  Tested `cookies extract` (Chrome, via `browser_cookie3`) followed by a
+  plain `requests.get(url, cookies=cj)` against a real member-only
+  article. Result: HTTP `403`, body is a Cloudflare "Just a moment..."
+  JS-challenge page, not article content — confirmed by grepping the
+  response for `cloudflare`/`challenge` markers. Valid session cookies
+  (`sid`, `uid`, `cf_clearance`, etc.) were present but insufficient;
+  Medium/Cloudflare is evidently fingerprinting the client beyond
+  cookies (TLS/JA3, HTTP/2 fingerprint, or similar), which a bare
+  `requests` client cannot replicate.
+
+  **Decision:** `fetch` (and likely `search`, same origin/protection)
+  will use a headless Playwright browser context with the extracted
+  cookies injected, rather than a plain HTTP client. This still
+  satisfies "no interactive/unlocked screen required during the run" —
+  headless browsers run without a display — so no other part of this
+  spec's data flow or outputs changes. `cookies extract` is unaffected
+  (it only reads Chrome's local cookie store, no network request). The
+  Components section's `fetch`/`search` descriptions should be read as
+  "via a headless browser session," not "via a plain HTTP client," when
+  the implementation plan is written.
+
+- Non-blocking, still open: the exact Medium search endpoint/approach
+  (driving Medium's search UI directly in the headless browser vs. the
   documented `WebSearch` fallback) will be resolved during
   implementation and does not change the external CLI contract either
   way.
