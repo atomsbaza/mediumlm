@@ -1,0 +1,24 @@
+[project]
+name = "mediumlm"
+version = "0.1.0"
+description = "Research Medium topics using your own logged-in Medium session"
+requires-python = ">=3.9"
+dependencies = [
+    "browser_cookie3",
+    "playwright",
+    "beautifulsoup4",
+    "markdownify",
+]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[project.scripts]
+mediumlm = "mediumlm.cli:main"
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
