@@ -84,3 +84,21 @@ def test_fetch_prints_json_result(tmp_path, monkeypatch, capsys):
     payload = json.loads(captured.out)
     assert payload["access"] == "full"
     assert payload["markdown"] == "# Some Article"
+
+
+def test_unexpected_exception_reports_as_clean_error(tmp_path, monkeypatch, capsys):
+    cookie_path = tmp_path / "cookies.json"
+    cookie_path.write_text(json.dumps(
+        [{"name": "sid", "value": "x", "domain": ".medium.com", "path": "/", "secure": True}]
+    ))
+    monkeypatch.setattr(
+        "mediumlm.search.search",
+        lambda query, cookies, limit: (_ for _ in ()).throw(RuntimeError("browser crashed")),
+    )
+
+    exit_code = cli.main(["search", "test topic", "--path", str(cookie_path)])
+
+    assert exit_code == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "error: browser crashed" in captured.err

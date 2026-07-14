@@ -67,7 +67,7 @@ def build_parser() -> argparse.ArgumentParser:
     cookies_sub = cookies_parser.add_subparsers(dest="cookies_command", required=True)
 
     extract_parser = cookies_sub.add_parser("extract")
-    extract_parser.add_argument("--browser", default="chrome")
+    extract_parser.add_argument("--browser", default="chrome", choices=["chrome"])
     extract_parser.add_argument("--path")
     extract_parser.set_defaults(func=_cmd_cookies_extract)
 
@@ -92,7 +92,11 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: Optional[List[str]] = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    return args.func(args)
+    try:
+        return args.func(args)
+    except Exception as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":
