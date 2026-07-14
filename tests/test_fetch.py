@@ -39,3 +39,26 @@ def test_fetch_article_flags_blocked_pages(monkeypatch):
 
     assert result.access == "preview"
     assert result.access_reason == "blocked"
+
+
+def test_fetch_article_flags_non_200_status_even_with_full_looking_body(monkeypatch):
+    html = (
+        "<html><head><title>Rate Limited</title></head>"
+        "<body><article><h1>Looks Real</h1><p>"
+        + ("word " * 150)
+        + "</p></article></body></html>"
+    )
+
+    class FakePage:
+        status = 429
+        final_url = "https://medium.com/@a/test-piece-abc123abc123"
+        title = "Rate Limited"
+
+    FakePage.html = html
+
+    monkeypatch.setattr("mediumlm.browser.fetch_page", lambda url, cookies: FakePage())
+
+    result = fetch.fetch_article("https://medium.com/@a/test-piece-abc123abc123", cookies=[])
+
+    assert result.access == "preview"
+    assert result.access_reason == "blocked"

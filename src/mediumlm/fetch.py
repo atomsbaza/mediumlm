@@ -19,7 +19,7 @@ class ArticleResult:
 
 def fetch_article(url: str, cookies: List[dict]) -> ArticleResult:
     page = browser_mod.fetch_page(url, cookies)
-    access, reason = parsing.detect_access(page.html, page.title)
+    access, reason = parsing.detect_access(page.html, page.title, status=page.status)
     markdown = parsing.extract_article_markdown(page.html)
     return ArticleResult(
         url=url,

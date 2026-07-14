@@ -57,6 +57,27 @@ def test_detect_access_cookies_expired_with_absolute_signin_url():
     assert reason == "cookies_expired"
 
 
+def test_detect_access_non_200_status_is_blocked_even_with_full_looking_body():
+    html = _load("full_article.html")
+    access, reason = parsing.detect_access(html, title="My Great Article – Medium", status=429)
+    assert access == "preview"
+    assert reason == "blocked"
+
+
+def test_detect_access_status_none_preserves_existing_behavior():
+    html = _load("full_article.html")
+    access, reason = parsing.detect_access(html, title="My Great Article – Medium", status=None)
+    assert access == "full"
+    assert reason is None
+
+
+def test_detect_access_empty_body_at_200_is_not_silently_full():
+    html = "<html><head><title>Some Article – Medium</title></head><body></body></html>"
+    access, reason = parsing.detect_access(html, title="Some Article – Medium", status=200)
+    assert access == "preview"
+    assert reason == "blocked"
+
+
 def test_extract_article_markdown_pulls_article_body_only():
     html = _load("full_article.html")
     markdown = parsing.extract_article_markdown(html)
