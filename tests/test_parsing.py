@@ -37,6 +37,26 @@ def test_detect_access_not_member():
     assert reason == "not_member"
 
 
+def test_detect_access_cookies_expired_with_absolute_signin_url():
+    html = """
+    <html>
+    <head><title>Some Article – Medium</title></head>
+    <body>
+    <nav>
+    <a href="https://medium.com/m/signin?operation=login">Sign in</a>
+    </nav>
+    <article>
+    <h1>Some Article</h1>
+    <p>Short preview text only, not the full story body.</p>
+    </article>
+    </body>
+    </html>
+    """
+    access, reason = parsing.detect_access(html, title="Some Article – Medium")
+    assert access == "preview"
+    assert reason == "cookies_expired"
+
+
 def test_extract_article_markdown_pulls_article_body_only():
     html = _load("full_article.html")
     markdown = parsing.extract_article_markdown(html)

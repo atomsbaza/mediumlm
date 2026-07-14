@@ -27,13 +27,13 @@ def detect_access(html: str, title: str) -> Tuple[str, Optional[str]]:
 
     soup = BeautifulSoup(html, "html.parser")
     signed_out = any(
-        a.get("href", "").startswith(marker)
+        marker in a.get("href", "")
         for marker in SIGNED_OUT_HREF_MARKERS
         for a in soup.find_all("a")
     )
     article = soup.find("article")
     article_text = article.get_text(" ", strip=True) if article else ""
-    is_member_gated = MEMBER_ONLY_MARKER in html.lower()
+    is_member_gated = MEMBER_ONLY_MARKER in soup.get_text(" ", strip=True).lower()
 
     if signed_out and len(article_text) < FULL_ARTICLE_MIN_CHARS:
         return "preview", "cookies_expired"
