@@ -88,7 +88,19 @@ def search(query: str, cookies: List[dict], limit: int = 8) -> List[SearchResult
     forwarded here. Paywall/membership resolution still happens
     correctly downstream in fetch_article, which does use the real
     session.
+
+    Raises RuntimeError if the search page didn't load successfully
+    (non-200 status) — this must not be silently reported as "zero
+    results," which would be indistinguishable from a genuine empty
+    search and is the same silent-failure class this project's error
+    handling standards forbid.
     """
     url = SEARCH_URL_TEMPLATE.format(query=quote_plus(query))
     page = browser_mod.fetch_page(url, cookies=[], settle_ms=SEARCH_SETTLE_MS)
+    if page.status != 200:
+        raise RuntimeError(
+            f"Medium search failed (status {page.status}) for query {query!r} — "
+            "this is not the same as zero results; the search page did not load "
+            "successfully"
+        )
     return parse_search_results(page.html)[:limit]

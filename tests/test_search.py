@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from mediumlm import search
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -124,3 +126,16 @@ def test_search_uses_longer_settle_time_than_browser_default(monkeypatch):
     assert len(captured_settle_ms) == 1
     assert captured_settle_ms[0] > 2000
     assert captured_settle_ms[0] == search.SEARCH_SETTLE_MS
+
+
+def test_search_raises_on_non_200_status_instead_of_returning_empty(monkeypatch):
+    class FakePage:
+        status = 429
+        final_url = "https://medium.com/search?q=mcp"
+        title = "mcp - Medium Search"
+        html = "<html><body>Rate limited</body></html>"
+
+    monkeypatch.setattr("mediumlm.browser.fetch_page", lambda url, cookies, settle_ms=6000: FakePage())
+
+    with pytest.raises(RuntimeError):
+        search.search("mcp", cookies=[], limit=8)
