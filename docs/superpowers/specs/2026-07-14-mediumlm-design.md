@@ -237,3 +237,17 @@ don't require hitting real Medium and can run in CI.
   documented `WebSearch` fallback) will be resolved during
   implementation and does not change the external CLI contract either
   way.
+
+- **Headless Playwright fetch spike (2026-07-14): PASSED.** Re-ran the
+  same article with a headless Chromium context (via Playwright),
+  cookies injected via `context.add_cookies(...)` from the same
+  `browser_cookie3` extraction, `wait_until='load'` (not
+  `networkidle` — Medium's background requests never go fully idle,
+  which timed out the first attempt). Result: HTTP `200`, full article
+  body extracted from the `<article>` element (4454 characters,
+  content matches the real article). No Cloudflare challenge, no
+  block. This confirms the revised mechanism from the prior entry:
+  `fetch` is implemented as a headless Playwright context with
+  extracted cookies injected, `wait_until='load'` plus a short
+  settle delay, not `networkidle`. The fetch-mechanism open question
+  is now closed — implementation can proceed on this basis.
