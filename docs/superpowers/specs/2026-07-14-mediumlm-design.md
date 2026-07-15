@@ -80,21 +80,20 @@ Distinguishes "no cookie file" from "cookie file present but stale" in
 its error message.
 
 ### `mediumlm search <query> [--limit N]`
-Uses the stored session to search Medium for the query. Returns a JSON
-list of candidates: `{title, url, author, publication, snippet}`.
+Searches Medium for the query and returns a JSON list of candidates:
+`{title, url}`.
 
-Primary approach: Medium's internal search/GraphQL endpoint (surfaces
-personalized results, including from publications the user follows).
-
-**Open risk:** Medium's search UI is a client-rendered React app; a plain
-authenticated GET to the search page may not return results in raw HTML.
-Implementation will need to identify the actual data endpoint (likely a
-GraphQL call the SPA makes). If that endpoint proves unstable, blocked,
-or requires additional signing, the documented fallback is: use
-`WebSearch` with `site:medium.com`, then `mediumlm fetch` each result URL
-for full text. This fallback trades personalization for reliability and
-should be wired in from the start as a backstop, not added later in a
-panic.
+**Superseded by live verification (2026-07-15):** this section originally
+assumed authenticated search would surface personalized results. Live
+testing during Task 10 of the implementation plan found the opposite —
+see "Search findings from live verification" below. `search()` fetches
+**unauthenticated** (no cookies), and paywall/membership resolution
+happens entirely downstream in `fetch()`, which does use the real
+session. `{author, publication, snippet}` were dropped from the
+original design — Medium's search results page doesn't reliably expose
+these as separately parseable fields per result; `title` and `url` are
+sufficient for the discovery step, and `fetch()` returns full metadata
+(including a proper `title`) for whichever results are actually fetched.
 
 ### `mediumlm fetch <url>`
 Fetches the article HTML using the stored session, extracts clean
@@ -251,3 +250,64 @@ don't require hitting real Medium and can run in CI.
   extracted cookies injected, `wait_until='load'` plus a short
   settle delay, not `networkidle`. The fetch-mechanism open question
   is now closed — implementation can proceed on this basis.
+
+## Search findings from live verification (2026-07-15)
+
+Task 10 of the implementation plan (manual end-to-end verification
+against real Medium) found that the originally-implemented `search()`
+did not work at all against live Medium — it returned only sitewide
+footer links (Careers/Privacy/Rules/Terms), never real article results.
+Three distinct, compounding causes were found and fixed, each confirmed
+empirically before and after:
+
+1. **Authenticated search is blocked; unauthenticated search works.**
+   Capturing network responses during a live headless run showed
+   Medium's search-results page is populated by an async call to
+   `medium.com/_/graphql` that returns `403` when the request carries
+   session cookies, but succeeds and returns real public results when
+   made with no cookies at all. This is not a page-load-level block
+   (the outer document still returns `200`) — it's specific to that
+   privileged GraphQL call, likely stricter bot/CSRF enforcement on
+   authenticated API traffic than on public page loads. **Fix:**
+   `search()` always fetches the search page unauthenticated
+   (`cookies=[]`), regardless of what the caller passes in. This does
+   not weaken paywall handling: `fetch()` still uses the real session
+   and was separately confirmed live to return `access: "full"` with
+   complete text for a full-membership account, including on an
+   article whose page displayed a "Member-only story" badge. Search's
+   job is discovery only; access resolution happens entirely in fetch.
+
+2. **Query space encoding.** `search()` originally used `quote()`,
+   which percent-encodes spaces as `%20`. Live testing showed Medium's
+   search backend returns a generic 500 error page for any multi-word
+   query encoded this way, regardless of auth state. The identical
+   query encoded with `+` for spaces (`quote_plus()`) works correctly.
+   Single-word queries never exposed this, since there's no space to
+   encode differently — this is why the original spike-era single-word
+   test queries didn't catch it.
+
+3. **Search results render asynchronously; the default settle time is
+   too short.** `fetch_page`'s default `settle_ms=2000` is sufficient
+   for `fetch()` (article content is server-rendered into the initial
+   HTML) but not for the search-results page, which populates its
+   result stream via client-side rendering after the initial load.
+   Confirmed empirically: the identical query/page returned only
+   footer links at a 2000ms settle, but 14 correct real results at a
+   6000ms settle. **Fix:** `search()` passes an explicit longer
+   `settle_ms` (6000, a module-level constant) to `fetch_page` for this
+   one call site only — `fetch()` and `cookies.check_cookies()` are
+   unaffected and keep the faster default.
+
+With all three fixes applied, `mediumlm search "claude code mcp" --limit 5`
+against live Medium returns 5 real, correctly-titled articles, and
+piping one of those results into `mediumlm fetch` returns
+`access: "full"` with complete article text — confirming the full
+search → fetch pipeline works end-to-end.
+
+**Known residual risk (not fixed, documented as accepted):** the 6000ms
+settle is a fixed sleep, not a poll for a results-container selector.
+On a slow connection it could still under-wait and silently return a
+short/empty result set (indistinguishable from "no matches" without
+inspecting further); on a fast connection it wastes time. Acceptable
+for a personal-use, on-demand CLI; would need to become a polling wait
+if this tool's usage or scale ever changes.
