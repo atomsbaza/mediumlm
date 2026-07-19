@@ -1,7 +1,7 @@
 import json
 
 from mediumlm import cli
-from mediumlm.search import SearchResult
+from mediumlm.search import SearchResult, SearchUnavailableError
 
 
 def test_cookies_extract_reports_git_tracked_path_error(tmp_path, monkeypatch, capsys):
@@ -84,6 +84,32 @@ def test_fetch_prints_json_result(tmp_path, monkeypatch, capsys):
     payload = json.loads(captured.out)
     assert payload["access"] == "full"
     assert payload["markdown"] == "# Some Article"
+
+
+def test_search_unavailable_reports_websearch_fallback(tmp_path, monkeypatch, capsys):
+    cookie_path = tmp_path / "cookies.json"
+    cookie_path.write_text(json.dumps(
+        [{"name": "sid", "value": "x", "domain": ".medium.com", "path": "/", "secure": True}]
+    ))
+
+    monkeypatch.setattr(
+        "mediumlm.search.search",
+        lambda query, cookies, limit: (_ for _ in ()).throw(
+            SearchUnavailableError(
+                "Medium blocked the search-results API for query 'test topic' — "
+                "fall back to WebSearch with 'site:medium.com test topic' and then "
+                "`mediumlm fetch` each URL"
+            )
+        ),
+    )
+
+    exit_code = cli.main(["search", "test topic", "--path", str(cookie_path)])
+
+    assert exit_code == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "error:" in captured.err
+    assert "site:medium.com" in captured.err
 
 
 def test_unexpected_exception_reports_as_clean_error(tmp_path, monkeypatch, capsys):

@@ -42,7 +42,11 @@ def _cmd_search(args: argparse.Namespace) -> int:
     except cookies_mod.CookiesNotFoundError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
-    results = search_mod.search(args.query, cookies=loaded, limit=args.limit)
+    try:
+        results = search_mod.search(args.query, cookies=loaded, limit=args.limit)
+    except search_mod.SearchUnavailableError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
     print(json.dumps([dataclasses.asdict(r) for r in results]))
     return 0
 

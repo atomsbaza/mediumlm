@@ -139,3 +139,40 @@ def test_search_raises_on_non_200_status_instead_of_returning_empty(monkeypatch)
 
     with pytest.raises(RuntimeError):
         search.search("mcp", cookies=[], limit=8)
+
+
+def test_parse_search_results_filters_footer_links_from_error_page():
+    html = (FIXTURES / "search_error_page.html").read_text()
+    results = search.parse_search_results(html)
+
+    assert results == []
+
+
+def test_search_raises_search_unavailable_on_error_page(monkeypatch):
+    html = (FIXTURES / "search_error_page.html").read_text()
+
+    class FakePage:
+        status = 200
+        final_url = "https://medium.com/search?q=mcp"
+        title = "mcp - Medium Search"
+
+    FakePage.html = html
+
+    monkeypatch.setattr("mediumlm.browser.fetch_page", lambda url, cookies, settle_ms=6000: FakePage())
+
+    with pytest.raises(search.SearchUnavailableError, match="site:medium.com"):
+        search.search("mcp", cookies=[], limit=8)
+
+
+def test_search_returns_empty_list_when_no_results_and_no_error_marker(monkeypatch):
+    class FakePage:
+        status = 200
+        final_url = "https://medium.com/search?q=asdkjhaskjdhaskjdh"
+        title = "asdkjhaskjdhaskjdh - Medium Search"
+        html = "<html><body><p>No stories match your search.</p></body></html>"
+
+    monkeypatch.setattr("mediumlm.browser.fetch_page", lambda url, cookies, settle_ms=6000: FakePage())
+
+    results = search.search("asdkjhaskjdhaskjdh", cookies=[], limit=8)
+
+    assert results == []
