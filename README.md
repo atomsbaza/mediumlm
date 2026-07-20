@@ -41,6 +41,14 @@ mediumlm search "claude code mcp" --limit 8
 
 # Fetch a specific article's full text using your session
 mediumlm fetch "https://medium.com/@author/article-slug-abc123abc123"
+
+# Fetch several articles in one call: the browser launch is shared
+# (each article still gets a fresh context — Medium challenges reused
+# ones), results come back as a JSON array in input order, and a
+# per-URL failure is recorded as {"access": "error", "error": "..."}
+# instead of aborting the batch
+mediumlm fetch "https://medium.com/@a/first-abc123abc123" \
+               "https://medium.com/@a/second-def456def456"
 ```
 
 Every command prints a single JSON object/array to stdout on success.
@@ -50,7 +58,10 @@ stderr, and the exit code is `1`.
 `fetch`'s output includes an explicit `access: "full" | "preview"`
 field with an `access_reason` (`blocked`, `cookies_expired`, or
 `not_member`) whenever the article wasn't fully readable — this is
-never silently collapsed into a plain success.
+never silently collapsed into a plain success. Batch mode prints a
+JSON array (single-URL mode a single object), and the exit code is
+`1` only when every URL in a batch failed — single-URL failures keep
+the `error:`-on-stderr, empty-stdout contract.
 
 ## How it works
 
@@ -91,6 +102,6 @@ outside Medium's Terms of Service; this is not a bulk-scraping tool.
 python3 -m pytest tests/ -v
 ```
 
-39 tests, all fixture/mock-driven except one that drives a real local
+47 tests, all fixture/mock-driven except one that drives a real local
 HTTP server to verify cookie injection actually reaches the browser
 layer.
