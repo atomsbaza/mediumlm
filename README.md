@@ -102,6 +102,6 @@ outside Medium's Terms of Service; this is not a bulk-scraping tool.
 python3 -m pytest tests/ -v
 ```
 
-47 tests, all fixture/mock-driven except one that drives a real local
-HTTP server to verify cookie injection actually reaches the browser
-layer.
+The suite is fixture/mock-driven except one test that drives a real
+local HTTP server to verify cookie injection actually reaches the
+browser layer.
