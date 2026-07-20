@@ -44,6 +44,18 @@ def fetch_articles(urls: List[str], cookies: List[dict]) -> List[ArticleResult]:
         for url in urls:
             try:
                 page = session.fetch(url)
+                access, reason = parsing.detect_access(
+                    page.html, page.title, status=page.status
+                )
+                results.append(
+                    ArticleResult(
+                        url=url,
+                        title=page.title,
+                        access=access,
+                        access_reason=reason,
+                        markdown=parsing.extract_article_markdown(page.html),
+                    )
+                )
             except Exception as exc:
                 results.append(
                     ArticleResult(
@@ -55,17 +67,4 @@ def fetch_articles(urls: List[str], cookies: List[dict]) -> List[ArticleResult]:
                         error=str(exc),
                     )
                 )
-                continue
-            access, reason = parsing.detect_access(
-                page.html, page.title, status=page.status
-            )
-            results.append(
-                ArticleResult(
-                    url=url,
-                    title=page.title,
-                    access=access,
-                    access_reason=reason,
-                    markdown=parsing.extract_article_markdown(page.html),
-                )
-            )
     return results

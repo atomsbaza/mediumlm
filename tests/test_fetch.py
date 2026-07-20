@@ -1,4 +1,4 @@
-from mediumlm import fetch
+from mediumlm import fetch, parsing
 
 
 def test_fetch_article_composes_access_and_markdown(monkeypatch):
@@ -79,8 +79,10 @@ class _FakeSession:
     def __init__(self, cookies, settle_ms=2000):
         self.pages = {}
         self.failures = {}
+        self.enter_count = 0
 
     def __enter__(self):
+        self.enter_count += 1
         return self
 
     def __exit__(self, exc_type, exc, tb):
@@ -120,6 +122,7 @@ def test_fetch_articles_uses_one_session_for_all_urls(monkeypatch):
     assert all(r.error is None for r in results)
     assert "First" in results[0].markdown
     assert "Second" in results[1].markdown
+    assert session.enter_count == 1
 
 
 def test_fetch_articles_converts_per_url_failure_to_error_result(monkeypatch):
@@ -140,5 +143,38 @@ def test_fetch_articles_converts_per_url_failure_to_error_result(monkeypatch):
     assert results[0].access == "error"
     assert "ERR_NAME_NOT_RESOLVED" in results[0].error
     assert results[0].markdown == ""
+    assert results[1].access == "full"
+    assert results[1].error is None
+
+
+def test_fetch_articles_isolates_parsing_failure_to_one_url(monkeypatch):
+    url_ok = "https://medium.com/@a/works-abc123abc123"
+    url_bad = "https://medium.com/@a/bad-parse-def456def456"
+    marker = "BOOM_MARKER"
+    session = _FakeSession(cookies=[])
+    session.pages = {
+        url_ok: _FakePage(url_ok, "Works – Medium", _full_article_html("Works")),
+        url_bad: _FakePage(
+            url_bad, "Bad – Medium", _full_article_html("Bad") + marker
+        ),
+    }
+    monkeypatch.setattr(
+        "mediumlm.browser.BrowserSession", lambda cookies, settle_ms=2000: session
+    )
+
+    real_detect_access = parsing.detect_access
+
+    def fake_detect_access(html, title, status=None):
+        if marker in html:
+            raise RuntimeError("boom")
+        return real_detect_access(html, title, status=status)
+
+    monkeypatch.setattr("mediumlm.parsing.detect_access", fake_detect_access)
+
+    results = fetch.fetch_articles([url_bad, url_ok], cookies=[])
+
+    assert results[0].url == url_bad
+    assert results[0].access == "error"
+    assert "boom" in results[0].error
     assert results[1].access == "full"
     assert results[1].error is None
