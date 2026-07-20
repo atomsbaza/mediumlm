@@ -13,9 +13,13 @@ this repo), but the `mediumlm` CLI works standalone from any terminal.
 ## Install
 
 ```bash
-pip3 install -e ".[dev]"
+uv tool install .          # installs the `mediumlm` CLI into ~/.local/bin
 python3 -m playwright install chromium
 ```
+
+After changing the source, refresh with `uv tool install --reinstall .`.
+For a dev/editable install for hacking on the code, use
+`pip3 install -e ".[dev]"`.
 
 Requires Python 3.9+ and Chrome, logged into Medium, for the first
 cookie extraction.
@@ -30,8 +34,9 @@ mediumlm cookies extract
 # Confirm the stored session still authenticates
 mediumlm cookies check
 
-# Search Medium for a topic (runs unauthenticated — see "How it
-# works" below)
+# Search Medium for a topic (Medium currently blocks this for
+# headless clients; the command fails with a clear error pointing
+# at the fallback — see "How it works" below)
 mediumlm search "claude code mcp" --limit 8
 
 # Fetch a specific article's full text using your session
@@ -57,12 +62,19 @@ never silently collapsed into a plain success.
   cookies injected. A plain HTTP client doesn't work here — Medium's
   Cloudflare bot detection blocks it; a real (headless) browser
   context does not trip the same defenses.
-- **Searching** deliberately runs *without* cookies. Live testing found
-  Medium's search-results page loads its content via an async GraphQL
-  call that Medium blocks (403) for authenticated requests but allows
-  unauthenticated — so `search` finds candidate articles anonymously,
-  and `fetch` (authenticated) resolves the actual paywall/membership
-  status of whichever ones you choose to read.
+- **Searching** is currently unavailable. A 2026-07-15 finding showed
+  unauthenticated search working while authenticated search was
+  blocked; that was superseded on 2026-07-19 — Medium's search-results
+  GraphQL API now returns 403 to headless-browser XHRs regardless of
+  whether cookies are sent, and the page renders an error state instead
+  of results. `mediumlm search` detects this and raises a clear
+  "search unavailable" error (exit 1) rather than returning junk; it
+  still returns a genuine empty list for real zero-result queries if
+  search ever works again. The practical discovery path in the
+  meantime is an external web search restricted to `site:medium.com`,
+  feeding the found URLs to `mediumlm fetch` (which still works fully
+  with your session). The search code path stays in place so `search`
+  resumes working automatically if Medium unblocks it.
 
 See `docs/superpowers/specs/2026-07-14-mediumlm-design.md` for the
 full design rationale, including the live-verification findings above.
@@ -79,6 +91,6 @@ outside Medium's Terms of Service; this is not a bulk-scraping tool.
 python3 -m pytest tests/ -v
 ```
 
-35 tests, all fixture/mock-driven except one that drives a real local
+39 tests, all fixture/mock-driven except one that drives a real local
 HTTP server to verify cookie injection actually reaches the browser
 layer.
