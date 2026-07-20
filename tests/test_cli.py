@@ -202,6 +202,37 @@ def test_search_unavailable_reports_websearch_fallback(tmp_path, monkeypatch, ca
     assert "site:medium.com" in captured.err
 
 
+def test_fetch_batch_partial_failure_exits_0_with_error_entries(tmp_path, monkeypatch, capsys):
+    cookie_path = tmp_path / "cookies.json"
+    cookie_path.write_text(json.dumps(
+        [{"name": "sid", "value": "x", "domain": ".medium.com", "path": "/", "secure": True}]
+    ))
+
+    from mediumlm.fetch import ArticleResult
+
+    monkeypatch.setattr(
+        "mediumlm.fetch.fetch_articles",
+        lambda urls, cookies: [
+            ArticleResult(url=urls[0], title="OK", access="full", access_reason=None, markdown="# OK"),
+            ArticleResult(url=urls[1], title="", access="error",
+                          access_reason=None, markdown="", error="net::ERR_TIMED_OUT"),
+        ],
+    )
+
+    exit_code = cli.main([
+        "fetch",
+        "https://medium.com/@a/one-abc123abc123",
+        "https://medium.com/@a/two-def456def456",
+        "--path", str(cookie_path),
+    ])
+
+    assert exit_code == 0
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+    assert [p["access"] for p in payload] == ["full", "error"]
+    assert captured.err == ""
+
+
 def test_unexpected_exception_reports_as_clean_error(tmp_path, monkeypatch, capsys):
     cookie_path = tmp_path / "cookies.json"
     cookie_path.write_text(json.dumps(
