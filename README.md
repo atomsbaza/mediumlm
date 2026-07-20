@@ -96,6 +96,32 @@ Built for personal research against your own Medium account, at
 normal single-topic, on-demand volume. Automated access likely falls
 outside Medium's Terms of Service; this is not a bulk-scraping tool.
 
+## Security
+
+- **The cookie file is the only secret.** `~/.mediumlm/cookies.json`
+  is written with `0600` permissions, and the tool refuses to write
+  it anywhere inside a git-tracked directory. `.gitignore` also blocks
+  any `*cookies*.json` pattern as a second line of defense. Cookie
+  values never appear on stdout/stderr or in error messages — only
+  counts and status make it into output.
+- **Dependencies are version-bounded** in `pyproject.toml`.
+  `browser_cookie3` gets the tightest pin of the group, since its
+  entire job is decrypting your local browser's cookie store
+  (Keychain access on macOS) — that's not something to let bump
+  automatically; upgrades there should be deliberate.
+- **Fetched article content is untrusted input.** It comes from a
+  third party and is parsed with BeautifulSoup, which does not
+  execute JavaScript at parse time (the page's own JS only runs
+  inside Chromium's sandbox during fetch). Anything downstream that
+  consumes the resulting markdown — an AI assistant, your notes —
+  should treat it as data, never as instructions; the companion
+  Claude skill enforces that boundary explicitly.
+- **Accepted, by design:** any process running as your user can read
+  the cookie file, same as any other local secret under the standard
+  single-user trust model. `cookies extract` needs access to Chrome's
+  Safe Storage key to work at all. And automated access sits in a
+  gray area of Medium's ToS — see "Scope" above.
+
 ## Development
 
 ```bash
