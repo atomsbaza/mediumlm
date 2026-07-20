@@ -49,6 +49,11 @@ mediumlm fetch "https://medium.com/@author/article-slug-abc123abc123"
 # instead of aborting the batch
 mediumlm fetch "https://medium.com/@a/first-abc123abc123" \
                "https://medium.com/@a/second-def456def456"
+
+# If the stored session has expired, fetch automatically re-extracts
+# cookies from Chrome once and retries just the expired URLs
+# (disable with --no-refresh; a note is printed to stderr when this
+# happens — stdout stays pure JSON)
 ```
 
 Every command prints a single JSON object/array to stdout on success.
@@ -103,7 +108,11 @@ outside Medium's Terms of Service; this is not a bulk-scraping tool.
   it anywhere inside a git-tracked directory. `.gitignore` also blocks
   any `*cookies*.json` pattern as a second line of defense. Cookie
   values never appear on stdout/stderr or in error messages — only
-  counts and status make it into output.
+  counts and status make it into output. Automatic refresh (see
+  `fetch` above) reuses this same guarded write path (`0600`,
+  git-tracked-path refusal) and runs at most once per invocation,
+  only when the session itself has expired — never in response to
+  bot-challenge pages.
 - **Dependencies are version-bounded** in `pyproject.toml`.
   `browser_cookie3` gets the tightest pin of the group, since its
   entire job is decrypting your local browser's cookie store

@@ -59,6 +59,31 @@ def _cmd_fetch(args: argparse.Namespace) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 1
     results = fetch_mod.fetch_articles(args.urls, cookies=loaded)
+    if not args.no_refresh:
+        expired = [
+            i for i, r in enumerate(results)
+            if r.access_reason == "cookies_expired"
+        ]
+        if expired:
+            try:
+                cookies_mod.extract_cookies(path=path)
+                reloaded = cookies_mod.load_cookies(path=path)
+            except Exception as exc:
+                print(
+                    f"note: session expired; automatic cookie refresh failed: {exc}",
+                    file=sys.stderr,
+                )
+            else:
+                print(
+                    f"note: session cookies expired — re-extracted from Chrome, "
+                    f"retrying {len(expired)} URL(s)",
+                    file=sys.stderr,
+                )
+                retried = fetch_mod.fetch_articles(
+                    [args.urls[i] for i in expired], cookies=reloaded
+                )
+                for i, r in zip(expired, retried):
+                    results[i] = r
     failed = [r for r in results if r.access == "error"]
     if len(results) == 1:
         result = results[0]
@@ -99,6 +124,10 @@ def build_parser() -> argparse.ArgumentParser:
     fetch_parser = sub.add_parser("fetch")
     fetch_parser.add_argument("urls", nargs="+")
     fetch_parser.add_argument("--path")
+    fetch_parser.add_argument(
+        "--no-refresh", action="store_true",
+        help="don't auto re-extract cookies when the session is expired",
+    )
     fetch_parser.set_defaults(func=_cmd_fetch)
 
     return parser
