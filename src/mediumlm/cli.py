@@ -58,8 +58,19 @@ def _cmd_fetch(args: argparse.Namespace) -> int:
     except cookies_mod.CookiesNotFoundError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
-    result = fetch_mod.fetch_article(args.url, cookies=loaded)
-    print(json.dumps(dataclasses.asdict(result)))
+    results = fetch_mod.fetch_articles(args.urls, cookies=loaded)
+    failed = [r for r in results if r.access == "error"]
+    if len(results) == 1:
+        result = results[0]
+        if result.access == "error":
+            print(f"error: fetch failed for {result.url}: {result.error}", file=sys.stderr)
+            return 1
+        print(json.dumps(dataclasses.asdict(result)))
+        return 0
+    print(json.dumps([dataclasses.asdict(r) for r in results]))
+    if failed and len(failed) == len(results):
+        print(f"error: all {len(results)} fetches failed", file=sys.stderr)
+        return 1
     return 0
 
 
@@ -86,7 +97,7 @@ def build_parser() -> argparse.ArgumentParser:
     search_parser.set_defaults(func=_cmd_search)
 
     fetch_parser = sub.add_parser("fetch")
-    fetch_parser.add_argument("url")
+    fetch_parser.add_argument("urls", nargs="+")
     fetch_parser.add_argument("--path")
     fetch_parser.set_defaults(func=_cmd_fetch)
 

@@ -69,10 +69,13 @@ def test_fetch_prints_json_result(tmp_path, monkeypatch, capsys):
     from mediumlm.fetch import ArticleResult
 
     monkeypatch.setattr(
-        "mediumlm.fetch.fetch_article",
-        lambda url, cookies: ArticleResult(
-            url=url, title="Some Article", access="full", access_reason=None, markdown="# Some Article"
-        ),
+        "mediumlm.fetch.fetch_articles",
+        lambda urls, cookies: [
+            ArticleResult(
+                url=urls[0], title="Some Article", access="full",
+                access_reason=None, markdown="# Some Article",
+            )
+        ],
     )
 
     exit_code = cli.main(
@@ -84,6 +87,93 @@ def test_fetch_prints_json_result(tmp_path, monkeypatch, capsys):
     payload = json.loads(captured.out)
     assert payload["access"] == "full"
     assert payload["markdown"] == "# Some Article"
+
+
+def test_fetch_multiple_urls_prints_json_array(tmp_path, monkeypatch, capsys):
+    cookie_path = tmp_path / "cookies.json"
+    cookie_path.write_text(json.dumps(
+        [{"name": "sid", "value": "x", "domain": ".medium.com", "path": "/", "secure": True}]
+    ))
+
+    from mediumlm.fetch import ArticleResult
+
+    monkeypatch.setattr(
+        "mediumlm.fetch.fetch_articles",
+        lambda urls, cookies: [
+            ArticleResult(url=u, title=f"T{i}", access="full", access_reason=None, markdown=f"# T{i}")
+            for i, u in enumerate(urls)
+        ],
+    )
+
+    exit_code = cli.main([
+        "fetch",
+        "https://medium.com/@a/one-abc123abc123",
+        "https://medium.com/@a/two-def456def456",
+        "--path", str(cookie_path),
+    ])
+
+    assert exit_code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert isinstance(payload, list)
+    assert [p["title"] for p in payload] == ["T0", "T1"]
+
+
+def test_fetch_single_url_error_result_reports_stderr_and_exit_1(tmp_path, monkeypatch, capsys):
+    cookie_path = tmp_path / "cookies.json"
+    cookie_path.write_text(json.dumps(
+        [{"name": "sid", "value": "x", "domain": ".medium.com", "path": "/", "secure": True}]
+    ))
+
+    from mediumlm.fetch import ArticleResult
+
+    monkeypatch.setattr(
+        "mediumlm.fetch.fetch_articles",
+        lambda urls, cookies: [
+            ArticleResult(url=urls[0], title="", access="error",
+                          access_reason=None, markdown="", error="net::ERR_TIMED_OUT")
+        ],
+    )
+
+    exit_code = cli.main(
+        ["fetch", "https://medium.com/@a/bad-abc123abc123", "--path", str(cookie_path)]
+    )
+
+    assert exit_code == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "ERR_TIMED_OUT" in captured.err
+
+
+def test_fetch_batch_all_failed_exits_1_but_still_prints_array(tmp_path, monkeypatch, capsys):
+    cookie_path = tmp_path / "cookies.json"
+    cookie_path.write_text(json.dumps(
+        [{"name": "sid", "value": "x", "domain": ".medium.com", "path": "/", "secure": True}]
+    ))
+
+    from mediumlm.fetch import ArticleResult
+
+    monkeypatch.setattr(
+        "mediumlm.fetch.fetch_articles",
+        lambda urls, cookies: [
+            ArticleResult(url=u, title="", access="error",
+                          access_reason=None, markdown="", error="boom")
+            for u in urls
+        ],
+    )
+
+    exit_code = cli.main([
+        "fetch",
+        "https://medium.com/@a/one-abc123abc123",
+        "https://medium.com/@a/two-def456def456",
+        "--path", str(cookie_path),
+    ])
+
+    assert exit_code == 1
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+    assert len(payload) == 2
+    assert all(p["access"] == "error" for p in payload)
+    assert "all 2 fetches failed" in captured.err
 
 
 def test_search_unavailable_reports_websearch_fallback(tmp_path, monkeypatch, capsys):
