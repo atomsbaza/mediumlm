@@ -338,17 +338,23 @@ def test_fetch_auto_refresh_failure_keeps_original_results(tmp_path, monkeypatch
 
     from mediumlm.fetch import ArticleResult
 
-    monkeypatch.setattr(
-        "mediumlm.fetch.fetch_articles",
-        lambda urls, cookies: [
+    fetch_calls = []
+
+    def fake_fetch_articles(urls, cookies):
+        fetch_calls.append(list(urls))
+        return [
             ArticleResult(url=urls[0], title="OK", access="full",
                           access_reason=None, markdown="# OK"),
             ArticleResult(url=urls[1], title="", access="preview",
                           access_reason="cookies_expired", markdown=""),
-        ],
-    )
+        ]
+
+    monkeypatch.setattr("mediumlm.fetch.fetch_articles", fake_fetch_articles)
+
+    extract_calls = []
 
     def fake_extract_cookies(browser="chrome", path=None):
+        extract_calls.append((browser, path))
         raise RuntimeError("keychain denied")
 
     monkeypatch.setattr("mediumlm.cookies.extract_cookies", fake_extract_cookies)
@@ -367,6 +373,8 @@ def test_fetch_auto_refresh_failure_keeps_original_results(tmp_path, monkeypatch
     assert payload[1]["access_reason"] == "cookies_expired"
     assert "automatic cookie refresh failed" in captured.err
     assert "keychain denied" in captured.err
+    assert len(extract_calls) == 1
+    assert len(fetch_calls) == 1
 
 
 def test_fetch_auto_refresh_not_triggered_for_blocked(tmp_path, monkeypatch, capsys):

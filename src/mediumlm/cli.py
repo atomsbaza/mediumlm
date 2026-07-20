@@ -75,7 +75,7 @@ def _cmd_fetch(args: argparse.Namespace) -> int:
                 )
             else:
                 print(
-                    f"note: session cookies expired — re-extracted from Chrome, "
+                    f"note: session cookies expired - re-extracted from Chrome, "
                     f"retrying {len(expired)} URL(s)",
                     file=sys.stderr,
                 )
