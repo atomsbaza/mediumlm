@@ -3,11 +3,13 @@ name = "mediumlm"
 version = "0.1.0"
 description = "Research Medium topics using your own logged-in Medium session"
 requires-python = ">=3.9"
+# browser_cookie3 is pinned tightest because it decrypts the local browser cookie store
+# (Keychain access) — upgrades to it should be deliberate, not automatic.
 dependencies = [
-    "browser_cookie3",
-    "playwright",
-    "beautifulsoup4",
-    "markdownify",
+    "browser_cookie3>=0.20.1,<0.21",
+    "playwright>=1.60,<2",
+    "beautifulsoup4>=4.15,<5",
+    "markdownify>=1.2,<2",
 ]
 
 [project.optional-dependencies]
