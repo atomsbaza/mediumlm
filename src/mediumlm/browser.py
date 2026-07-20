@@ -44,12 +44,15 @@ def _to_playwright_cookies(cookies: List[dict]) -> List[dict]:
 
 
 class BrowserSession:
-    """One headless browser reused across multiple fetches.
+    """One headless browser launch reused across multiple fetches.
 
     Launching Chromium dominates per-article latency (~4-6s per
     launch); a batch of N articles through one session pays that cost
-    once. A single page is reused across navigations — per-URL `goto`
-    failures (timeout, DNS) leave the page navigable for the next URL.
+    once. The browser launch is reused across fetches, but each fetch
+    gets a fresh context+page: live verification (2026-07-20) showed
+    Medium's Cloudflare challenges the second navigation in a reused
+    context (403 regardless of pacing), while fresh contexts under one
+    launch pass.
     """
 
     def __init__(self, cookies: List[dict], settle_ms: int = 2000):
@@ -57,15 +60,11 @@ class BrowserSession:
         self._settle_ms = settle_ms
         self._playwright = None
         self._browser = None
-        self._page = None
 
     def __enter__(self) -> "BrowserSession":
         self._playwright = sync_playwright().start()
         try:
             self._browser = self._playwright.chromium.launch(headless=True)
-            context = self._browser.new_context(user_agent=USER_AGENT)
-            context.add_cookies(_to_playwright_cookies(self._cookies))
-            self._page = context.new_page()
         except Exception:
             self.__exit__(None, None, None)
             raise
@@ -82,21 +81,31 @@ class BrowserSession:
                 self._playwright = None
 
     def fetch(self, url: str, settle_ms: Optional[int] = None) -> PageResult:
-        """Load `url` in this session's page and return the settled result.
+        """Load `url` in a fresh context+page and return the settled result.
 
         Uses wait_until="load", not "networkidle" — Medium's page never
         goes fully network-idle (ongoing analytics/background requests),
         which caused "networkidle" to time out in the design spike.
+
+        A fresh context is created per fetch: reusing one context/page
+        across navigations gets a Cloudflare challenge (403) on the
+        second navigation to medium.com (live-verified 2026-07-20).
         """
         wait = self._settle_ms if settle_ms is None else settle_ms
-        response = self._page.goto(url, wait_until="load", timeout=45000)
-        self._page.wait_for_timeout(wait)
-        return PageResult(
-            status=response.status if response else 0,
-            final_url=self._page.url,
-            title=self._page.title(),
-            html=self._page.content(),
-        )
+        context = self._browser.new_context(user_agent=USER_AGENT)
+        try:
+            context.add_cookies(_to_playwright_cookies(self._cookies))
+            page = context.new_page()
+            response = page.goto(url, wait_until="load", timeout=45000)
+            page.wait_for_timeout(wait)
+            return PageResult(
+                status=response.status if response else 0,
+                final_url=page.url,
+                title=page.title(),
+                html=page.content(),
+            )
+        finally:
+            context.close()
 
 
 def fetch_page(url: str, cookies: List[dict], settle_ms: int = 2000) -> PageResult:
