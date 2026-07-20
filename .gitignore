@@ -6,3 +6,5 @@ venv/
 *cookies*.json
 .pytest_cache/
 *.egg-info/
+.DS_Store
+.claude/
