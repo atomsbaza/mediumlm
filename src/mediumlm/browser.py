@@ -72,12 +72,14 @@ class BrowserSession:
         return self
 
     def __exit__(self, exc_type, exc, tb) -> None:
-        if self._browser is not None:
-            self._browser.close()
+        try:
+            if self._browser is not None:
+                self._browser.close()
+        finally:
             self._browser = None
-        if self._playwright is not None:
-            self._playwright.stop()
-            self._playwright = None
+            if self._playwright is not None:
+                self._playwright.stop()
+                self._playwright = None
 
     def fetch(self, url: str, settle_ms: Optional[int] = None) -> PageResult:
         """Load `url` in this session's page and return the settled result.
