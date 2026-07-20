@@ -19,6 +19,10 @@ class ArticleResult:
 
 
 def fetch_article(url: str, cookies: List[dict]) -> ArticleResult:
+    """Kept as the library-level single-article API (raises on failure);
+    the CLI routes everything, including single URLs, through
+    fetch_articles.
+    """
     page = browser_mod.fetch_page(url, cookies)
     access, reason = parsing.detect_access(page.html, page.title, status=page.status)
     markdown = parsing.extract_article_markdown(page.html)
@@ -37,10 +41,14 @@ def fetch_articles(urls: List[str], cookies: List[dict]) -> List[ArticleResult]:
     A failure on one URL is recorded as an `access: "error"` result
     (with the exception text in `error`) and the batch continues —
     partial failure is returned explicitly, never raised away or
-    silently dropped. Results preserve input order.
+    silently dropped. Results preserve input order. A teardown failure
+    on the browser session (e.g. the browser crashed mid-batch) is
+    suppressed so already-fetched results always reach the caller.
     """
     results: List[ArticleResult] = []
-    with browser_mod.BrowserSession(cookies) as session:
+    session = browser_mod.BrowserSession(cookies)
+    session.__enter__()
+    try:
         for url in urls:
             try:
                 page = session.fetch(url)
@@ -67,4 +75,11 @@ def fetch_articles(urls: List[str], cookies: List[dict]) -> List[ArticleResult]:
                         error=str(exc),
                     )
                 )
+    finally:
+        try:
+            session.__exit__(None, None, None)
+        except Exception:
+            # Teardown failure must not discard already-fetched
+            # results; the OS reaps the crashed browser process.
+            pass
     return results

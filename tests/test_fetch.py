@@ -80,12 +80,15 @@ class _FakeSession:
         self.pages = {}
         self.failures = {}
         self.enter_count = 0
+        self.exit_raises = False
 
     def __enter__(self):
         self.enter_count += 1
         return self
 
     def __exit__(self, exc_type, exc, tb):
+        if self.exit_raises:
+            raise RuntimeError("teardown boom")
         return None
 
     def fetch(self, url, settle_ms=None):
@@ -178,3 +181,22 @@ def test_fetch_articles_isolates_parsing_failure_to_one_url(monkeypatch):
     assert "boom" in results[0].error
     assert results[1].access == "full"
     assert results[1].error is None
+
+
+def test_fetch_articles_returns_results_even_if_teardown_raises(monkeypatch):
+    url_ok = "https://medium.com/@a/works-abc123abc123"
+    session = _FakeSession(cookies=[])
+    session.pages = {
+        url_ok: _FakePage(url_ok, "Works – Medium", _full_article_html("Works")),
+    }
+    session.exit_raises = True
+    monkeypatch.setattr(
+        "mediumlm.browser.BrowserSession", lambda cookies, settle_ms=2000: session
+    )
+
+    results = fetch.fetch_articles([url_ok], cookies=[])
+
+    assert len(results) == 1
+    assert results[0].url == url_ok
+    assert results[0].access == "full"
+    assert session.enter_count == 1
