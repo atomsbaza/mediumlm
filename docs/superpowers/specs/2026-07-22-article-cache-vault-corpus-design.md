@@ -24,7 +24,7 @@ Every research run refetches every article from Medium, even ones fetched an hou
 ### 3.1 Storage (`src/mediumlm/cache.py`, new module)
 
 - Location `~/.mediumlm/cache/`, created `0700` (cached member-only text is private).
-- One JSON file per article: the full `ArticleResult` dict plus `fetched_at` (ISO-8601 UTC) and `final_url`. Filename = SHA-256 hex of the normalized URL.
+- One JSON file per article: the full `ArticleResult` dict plus `fetched_at` (ISO-8601 UTC) (`final_url` was in the original draft but is deliberately not stored — nothing consumes it, and the normalized `url` key already identifies the entry; recorded 2026-07-23 during Task 2 spec review). Filename = SHA-256 hex of the normalized URL.
 - URL normalization: strip query and fragment, resolve to absolute — same rule as `search._normalize_article_url` (reuse/extract that helper, do not duplicate the logic).
 - `index.json` maps normalized URL → `{title, fetched_at, file}` so listing never opens per-article files.
 - **Only `access: "full"` results are cached.** Previews, blocks, and errors are never written — they must retry on the next run.
