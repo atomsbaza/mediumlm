@@ -1,6 +1,6 @@
 [project]
 name = "mediumlm"
-version = "0.2.0"
+version = "0.3.0"
 description = "Research Medium topics using your own logged-in Medium session"
 requires-python = ">=3.9"
 # browser_cookie3 is pinned tightest because it decrypts the local browser cookie store

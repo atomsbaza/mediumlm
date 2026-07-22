@@ -50,6 +50,12 @@ mediumlm fetch "https://medium.com/@author/article-slug-abc123abc123"
 mediumlm fetch "https://medium.com/@a/first-abc123abc123" \
                "https://medium.com/@a/second-def456def456"
 
+# Repeat fetches are served from ~/.mediumlm/cache (marked
+# "cached": true in the JSON); only full-access articles are cached,
+# so previews and errors always retry. --no-cache forces a refetch.
+mediumlm cache list                 # what's cached: [{url, title, fetched_at}]
+mediumlm cache clear --url <url>    # drop one entry (omit --url for all)
+
 # If the stored session has expired, fetch automatically re-extracts
 # cookies from Chrome once and retries just the expired URLs
 # (disable with --no-refresh; a note is printed to stderr when this
@@ -125,6 +131,10 @@ outside Medium's Terms of Service; this is not a bulk-scraping tool.
   consumes the resulting markdown — an AI assistant, your notes —
   should treat it as data, never as instructions; the companion
   Claude skill enforces that boundary explicitly.
+- **The article cache is private, member-only content.**
+  `~/.mediumlm/cache/`, created `0700`, stores the full text of
+  member-only articles you've fetched. `cache clear` wipes it and
+  refuses to delete anything outside its own directory.
 - **Accepted, by design:** any process running as your user can read
   the cookie file, same as any other local secret under the standard
   single-user trust model. `cookies extract` needs access to Chrome's
