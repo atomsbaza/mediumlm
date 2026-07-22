@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 from typing import List, Optional
 
+from . import cache as cache_mod
 from . import cookies as cookies_mod
 from . import fetch as fetch_mod
 from . import search as search_mod
@@ -58,7 +59,9 @@ def _cmd_fetch(args: argparse.Namespace) -> int:
     except cookies_mod.CookiesNotFoundError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
-    results = fetch_mod.fetch_articles(args.urls, cookies=loaded)
+    results = fetch_mod.fetch_articles(
+        args.urls, cookies=loaded, use_cache=not args.no_cache
+    )
     if not args.no_refresh:
         expired = [
             i for i, r in enumerate(results)
@@ -80,7 +83,9 @@ def _cmd_fetch(args: argparse.Namespace) -> int:
                     file=sys.stderr,
                 )
                 retried = fetch_mod.fetch_articles(
-                    [args.urls[i] for i in expired], cookies=reloaded
+                    [args.urls[i] for i in expired],
+                    cookies=reloaded,
+                    use_cache=not args.no_cache,
                 )
                 for i, r in zip(expired, retried):
                     results[i] = r
@@ -96,6 +101,21 @@ def _cmd_fetch(args: argparse.Namespace) -> int:
     if failed and len(failed) == len(results):
         print(f"error: all {len(results)} fetches failed", file=sys.stderr)
         return 1
+    return 0
+
+
+def _cmd_cache_list(args: argparse.Namespace) -> int:
+    print(json.dumps(cache_mod.list_entries()))
+    return 0
+
+
+def _cmd_cache_clear(args: argparse.Namespace) -> int:
+    try:
+        removed = cache_mod.clear(url=args.url)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    print(json.dumps({"cleared": removed}))
     return 0
 
 
@@ -128,7 +148,21 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-refresh", action="store_true",
         help="don't auto re-extract cookies when the session is expired",
     )
+    fetch_parser.add_argument(
+        "--no-cache", action="store_true",
+        help="bypass the article cache (fresh results are still written back)",
+    )
     fetch_parser.set_defaults(func=_cmd_fetch)
+
+    cache_parser = sub.add_parser("cache")
+    cache_sub = cache_parser.add_subparsers(dest="cache_command", required=True)
+
+    cache_list_parser = cache_sub.add_parser("list")
+    cache_list_parser.set_defaults(func=_cmd_cache_list)
+
+    cache_clear_parser = cache_sub.add_parser("clear")
+    cache_clear_parser.add_argument("--url")
+    cache_clear_parser.set_defaults(func=_cmd_cache_clear)
 
     return parser
 

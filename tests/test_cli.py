@@ -1,7 +1,14 @@
 import json
 
+import pytest
+
 from mediumlm import cli
 from mediumlm.search import SearchResult, SearchUnavailableError
+
+
+@pytest.fixture(autouse=True)
+def _isolated_cache_dir(tmp_path, monkeypatch):
+    monkeypatch.setattr("mediumlm.cache.DEFAULT_CACHE_DIR", tmp_path / "cache")
 
 
 def test_cookies_extract_reports_git_tracked_path_error(tmp_path, monkeypatch, capsys):
@@ -70,7 +77,7 @@ def test_fetch_prints_json_result(tmp_path, monkeypatch, capsys):
 
     monkeypatch.setattr(
         "mediumlm.fetch.fetch_articles",
-        lambda urls, cookies: [
+        lambda urls, cookies, use_cache=True, cache_dir=None: [
             ArticleResult(
                 url=urls[0], title="Some Article", access="full",
                 access_reason=None, markdown="# Some Article",
@@ -99,7 +106,7 @@ def test_fetch_multiple_urls_prints_json_array(tmp_path, monkeypatch, capsys):
 
     monkeypatch.setattr(
         "mediumlm.fetch.fetch_articles",
-        lambda urls, cookies: [
+        lambda urls, cookies, use_cache=True, cache_dir=None: [
             ArticleResult(url=u, title=f"T{i}", access="full", access_reason=None, markdown=f"# T{i}")
             for i, u in enumerate(urls)
         ],
@@ -128,7 +135,7 @@ def test_fetch_single_url_error_result_reports_stderr_and_exit_1(tmp_path, monke
 
     monkeypatch.setattr(
         "mediumlm.fetch.fetch_articles",
-        lambda urls, cookies: [
+        lambda urls, cookies, use_cache=True, cache_dir=None: [
             ArticleResult(url=urls[0], title="", access="error",
                           access_reason=None, markdown="", error="net::ERR_TIMED_OUT")
         ],
@@ -154,7 +161,7 @@ def test_fetch_batch_all_failed_exits_1_but_still_prints_array(tmp_path, monkeyp
 
     monkeypatch.setattr(
         "mediumlm.fetch.fetch_articles",
-        lambda urls, cookies: [
+        lambda urls, cookies, use_cache=True, cache_dir=None: [
             ArticleResult(url=u, title="", access="error",
                           access_reason=None, markdown="", error="boom")
             for u in urls
@@ -212,7 +219,7 @@ def test_fetch_batch_partial_failure_exits_0_with_error_entries(tmp_path, monkey
 
     monkeypatch.setattr(
         "mediumlm.fetch.fetch_articles",
-        lambda urls, cookies: [
+        lambda urls, cookies, use_cache=True, cache_dir=None: [
             ArticleResult(url=urls[0], title="OK", access="full", access_reason=None, markdown="# OK"),
             ArticleResult(url=urls[1], title="", access="error",
                           access_reason=None, markdown="", error="net::ERR_TIMED_OUT"),
@@ -243,7 +250,7 @@ def test_fetch_auto_refresh_retries_expired_urls(tmp_path, monkeypatch, capsys):
 
     calls = []
 
-    def fake_fetch_articles(urls, cookies):
+    def fake_fetch_articles(urls, cookies, use_cache=True, cache_dir=None):
         calls.append(list(urls))
         if len(calls) == 1:
             return [
@@ -300,7 +307,7 @@ def test_fetch_no_refresh_flag_disables_auto_refresh(tmp_path, monkeypatch, caps
 
     monkeypatch.setattr(
         "mediumlm.fetch.fetch_articles",
-        lambda urls, cookies: [
+        lambda urls, cookies, use_cache=True, cache_dir=None: [
             ArticleResult(url=urls[0], title="OK", access="full",
                           access_reason=None, markdown="# OK"),
             ArticleResult(url=urls[1], title="", access="preview",
@@ -340,7 +347,7 @@ def test_fetch_auto_refresh_failure_keeps_original_results(tmp_path, monkeypatch
 
     fetch_calls = []
 
-    def fake_fetch_articles(urls, cookies):
+    def fake_fetch_articles(urls, cookies, use_cache=True, cache_dir=None):
         fetch_calls.append(list(urls))
         return [
             ArticleResult(url=urls[0], title="OK", access="full",
@@ -387,7 +394,7 @@ def test_fetch_auto_refresh_not_triggered_for_blocked(tmp_path, monkeypatch, cap
 
     monkeypatch.setattr(
         "mediumlm.fetch.fetch_articles",
-        lambda urls, cookies: [
+        lambda urls, cookies, use_cache=True, cache_dir=None: [
             ArticleResult(url=urls[0], title="", access="preview",
                           access_reason="blocked", markdown=""),
         ],
@@ -424,3 +431,109 @@ def test_unexpected_exception_reports_as_clean_error(tmp_path, monkeypatch, caps
     captured = capsys.readouterr()
     assert captured.out == ""
     assert "error: browser crashed" in captured.err
+
+
+def test_fetch_no_cache_flag_threads_use_cache_false(tmp_path, monkeypatch, capsys):
+    cookie_path = tmp_path / "cookies.json"
+    cookie_path.write_text(json.dumps(
+        [{"name": "sid", "value": "x", "domain": ".medium.com", "path": "/", "secure": True}]
+    ))
+
+    from mediumlm.fetch import ArticleResult
+
+    captured_kwargs = {}
+
+    def fake_fetch_articles(urls, cookies, use_cache=True, cache_dir=None):
+        captured_kwargs["use_cache"] = use_cache
+        return [ArticleResult(url=urls[0], title="T", access="full",
+                              access_reason=None, markdown="# T")]
+
+    monkeypatch.setattr("mediumlm.fetch.fetch_articles", fake_fetch_articles)
+
+    exit_code = cli.main([
+        "fetch", "https://medium.com/@a/x-abc123abc123",
+        "--no-cache", "--path", str(cookie_path),
+    ])
+
+    assert exit_code == 0
+    assert captured_kwargs["use_cache"] is False
+
+
+def test_fetch_json_includes_cached_field(tmp_path, monkeypatch, capsys):
+    cookie_path = tmp_path / "cookies.json"
+    cookie_path.write_text(json.dumps(
+        [{"name": "sid", "value": "x", "domain": ".medium.com", "path": "/", "secure": True}]
+    ))
+
+    from mediumlm.fetch import ArticleResult
+
+    monkeypatch.setattr(
+        "mediumlm.fetch.fetch_articles",
+        lambda urls, cookies, use_cache=True, cache_dir=None: [
+            ArticleResult(url=urls[0], title="T", access="full", access_reason=None,
+                          markdown="# T", cached=True, fetched_at="2026-07-22T00:00:00+00:00")
+        ],
+    )
+
+    exit_code = cli.main(
+        ["fetch", "https://medium.com/@a/x-abc123abc123", "--path", str(cookie_path)]
+    )
+
+    assert exit_code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["cached"] is True
+    assert payload["fetched_at"] == "2026-07-22T00:00:00+00:00"
+
+
+def test_cache_list_prints_entries(capsys):
+    from mediumlm import cache as cache_mod
+
+    cache_mod.store({
+        "url": "https://medium.com/@a/x-abc123abc123", "title": "X", "access": "full",
+        "access_reason": None, "markdown": "# X", "error": None,
+        "cached": False, "fetched_at": None,
+    })
+
+    exit_code = cli.main(["cache", "list"])
+
+    assert exit_code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload[0]["url"] == "https://medium.com/@a/x-abc123abc123"
+    assert payload[0]["title"] == "X"
+
+
+def test_cache_clear_all_and_single(capsys):
+    from mediumlm import cache as cache_mod
+
+    for slug, title in [("x-abc123abc123", "X"), ("y-def456def456", "Y")]:
+        cache_mod.store({
+            "url": f"https://medium.com/@a/{slug}", "title": title, "access": "full",
+            "access_reason": None, "markdown": "#", "error": None,
+            "cached": False, "fetched_at": None,
+        })
+
+    exit_code = cli.main(["cache", "clear", "--url", "https://medium.com/@a/x-abc123abc123"])
+    assert exit_code == 0
+    assert json.loads(capsys.readouterr().out) == {"cleared": 1}
+
+    exit_code = cli.main(["cache", "clear"])
+    assert exit_code == 0
+    assert json.loads(capsys.readouterr().out) == {"cleared": 1}
+
+
+def test_cache_clear_containment_error_reports_and_exits_1(monkeypatch, capsys):
+    from mediumlm import cache as cache_mod
+
+    cache_mod.store({
+        "url": "https://medium.com/@a/x-abc123abc123", "title": "X", "access": "full",
+        "access_reason": None, "markdown": "#", "error": None,
+        "cached": False, "fetched_at": None,
+    })
+    monkeypatch.setattr("mediumlm.cache.cache_key", lambda url: "../../evil")
+
+    exit_code = cli.main(["cache", "clear", "--url", "https://medium.com/@a/x-abc123abc123"])
+
+    assert exit_code == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "refusing to delete" in captured.err
