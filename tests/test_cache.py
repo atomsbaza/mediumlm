@@ -95,3 +95,19 @@ def test_unreadable_cache_dir_store_fails_soft(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr("mediumlm.cache.DEFAULT_CACHE_DIR", blocker / "cache")
     assert cache.store(_full_result()) is False
     assert "cache write failed" in capsys.readouterr().err
+
+
+def test_store_with_unserializable_value_fails_soft_and_leaves_no_temp_files(capsys):
+    bad = dict(_full_result(), markdown=set())
+    assert cache.store(bad) is False
+    assert "cache write failed" in capsys.readouterr().err
+    assert list(cache.DEFAULT_CACHE_DIR.glob(".tmp-*")) == []
+
+
+def test_store_returns_true_when_index_write_fails(capsys):
+    cache.store(_full_result())
+    (cache.DEFAULT_CACHE_DIR / "index.json").unlink()
+    (cache.DEFAULT_CACHE_DIR / "index.json").mkdir(parents=True)
+    assert cache.store(_full_result(url="https://medium.com/@b/y-def456def456", title="Y")) is True
+    assert "index" in capsys.readouterr().err
+    assert cache.load_cached("https://medium.com/@b/y-def456def456") is not None

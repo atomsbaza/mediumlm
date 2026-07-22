@@ -94,15 +94,18 @@ def store(result: dict, cache_dir: Optional[Path] = None) -> bool:
             entry["fetched_at"] = datetime.now(timezone.utc).isoformat()
         entry_name = f"{cache_key(normalized)}.json"
         _atomic_write(directory / entry_name, entry)
-        index = _read_json(directory / INDEX_NAME) or {}
-        index[normalized] = {
-            "title": entry.get("title", ""),
-            "fetched_at": entry["fetched_at"],
-            "file": entry_name,
-        }
-        _atomic_write(directory / INDEX_NAME, index)
+        try:
+            index = _read_json(directory / INDEX_NAME) or {}
+            index[normalized] = {
+                "title": entry.get("title", ""),
+                "fetched_at": entry["fetched_at"],
+                "file": entry_name,
+            }
+            _atomic_write(directory / INDEX_NAME, index)
+        except (OSError, TypeError, ValueError) as exc:
+            _note(f"cache index update failed ({exc}); entry cached but may not appear in cache list")
         return True
-    except OSError as exc:
+    except (OSError, TypeError, ValueError) as exc:
         _note(f"cache write failed ({exc}); continuing without cache")
         return False
 
