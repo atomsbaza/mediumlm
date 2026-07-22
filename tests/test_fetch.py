@@ -1,4 +1,11 @@
+import pytest
+
 from mediumlm import fetch, parsing
+
+
+@pytest.fixture(autouse=True)
+def _isolated_cache_dir(tmp_path, monkeypatch):
+    monkeypatch.setattr("mediumlm.cache.DEFAULT_CACHE_DIR", tmp_path / "cache")
 
 
 def test_fetch_article_composes_access_and_markdown(monkeypatch):
@@ -200,3 +207,93 @@ def test_fetch_articles_returns_results_even_if_teardown_raises(monkeypatch):
     assert results[0].url == url_ok
     assert results[0].access == "full"
     assert session.enter_count == 1
+
+
+def test_fetch_articles_all_cache_hits_never_launch_browser(monkeypatch):
+    from mediumlm import cache as cache_mod
+
+    url = "https://medium.com/@a/first-abc123abc123"
+    cache_mod.store({
+        "url": url, "title": "First – Medium", "access": "full",
+        "access_reason": None, "markdown": "# First", "error": None,
+        "cached": False, "fetched_at": None,
+    })
+
+    constructed = []
+    monkeypatch.setattr(
+        "mediumlm.browser.BrowserSession",
+        lambda cookies, settle_ms=2000: constructed.append(1) or None,
+    )
+
+    results = fetch.fetch_articles([url], cookies=[])
+
+    assert constructed == []  # no browser at all
+    assert results[0].cached is True
+    assert results[0].access == "full"
+    assert results[0].markdown == "# First"
+    assert results[0].fetched_at
+
+
+def test_fetch_articles_mixes_cached_and_live_preserving_order(monkeypatch):
+    from mediumlm import cache as cache_mod
+
+    cached_url = "https://medium.com/@a/first-abc123abc123"
+    live_url = "https://medium.com/@a/second-def456def456"
+    cache_mod.store({
+        "url": cached_url, "title": "First – Medium", "access": "full",
+        "access_reason": None, "markdown": "# First", "error": None,
+        "cached": False, "fetched_at": None,
+    })
+    session = _FakeSession(cookies=[])
+    session.pages = {
+        live_url: _FakePage(live_url, "Second – Medium", _full_article_html("Second")),
+    }
+    monkeypatch.setattr(
+        "mediumlm.browser.BrowserSession", lambda cookies, settle_ms=2000: session
+    )
+
+    results = fetch.fetch_articles([cached_url, live_url], cookies=[])
+
+    assert [r.url for r in results] == [cached_url, live_url]
+    assert results[0].cached is True
+    assert results[1].cached is False
+    assert session.enter_count == 1
+
+
+def test_fetch_articles_writes_full_results_back_to_cache(monkeypatch):
+    from mediumlm import cache as cache_mod
+
+    url = "https://medium.com/@a/first-abc123abc123"
+    session = _FakeSession(cookies=[])
+    session.pages = {url: _FakePage(url, "First – Medium", _full_article_html("First"))}
+    monkeypatch.setattr(
+        "mediumlm.browser.BrowserSession", lambda cookies, settle_ms=2000: session
+    )
+
+    fetch.fetch_articles([url], cookies=[])
+
+    entry = cache_mod.load_cached(url)
+    assert entry is not None
+    assert "First" in entry["markdown"]
+
+
+def test_fetch_articles_use_cache_false_bypasses_reads_but_still_writes(monkeypatch):
+    from mediumlm import cache as cache_mod
+
+    url = "https://medium.com/@a/first-abc123abc123"
+    cache_mod.store({
+        "url": url, "title": "Stale – Medium", "access": "full",
+        "access_reason": None, "markdown": "# Stale", "error": None,
+        "cached": False, "fetched_at": None,
+    })
+    session = _FakeSession(cookies=[])
+    session.pages = {url: _FakePage(url, "Fresh – Medium", _full_article_html("Fresh"))}
+    monkeypatch.setattr(
+        "mediumlm.browser.BrowserSession", lambda cookies, settle_ms=2000: session
+    )
+
+    results = fetch.fetch_articles([url], cookies=[], use_cache=False)
+
+    assert results[0].cached is False
+    assert "Fresh" in results[0].markdown
+    assert "Fresh" in cache_mod.load_cached(url)["markdown"]  # written back
