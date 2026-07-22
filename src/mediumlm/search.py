@@ -26,11 +26,12 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from typing import List
-from urllib.parse import quote_plus, urljoin, urlsplit, urlunsplit
+from urllib.parse import quote_plus, urlsplit
 
 from bs4 import BeautifulSoup
 
 from . import browser as browser_mod
+from .urls import normalize_article_url
 
 SEARCH_URL_TEMPLATE = "https://medium.com/search?q={query}"
 
@@ -68,17 +69,6 @@ class SearchResult:
     url: str
 
 
-def _normalize_article_url(href: str) -> str:
-    """Resolve a possibly-relative href to an absolute Medium URL with
-    its query string (e.g. Medium's positional tracking param) and
-    fragment stripped, so equivalent links dedupe and every result is
-    directly fetchable by browser.fetch_page (which requires absolute
-    URLs)."""
-    absolute = urljoin("https://medium.com/", href)
-    split = urlsplit(absolute)
-    return urlunsplit((split.scheme, split.netloc, split.path, "", ""))
-
-
 def parse_search_results(html: str) -> List[SearchResult]:
     soup = BeautifulSoup(html, "html.parser")
     results = []
@@ -90,7 +80,7 @@ def parse_search_results(html: str) -> List[SearchResult]:
         title = a.get_text(strip=True)
         if not title:
             continue
-        url = _normalize_article_url(href)
+        url = normalize_article_url(href)
         # Site-chrome links (e.g. the footer's Careers link on
         # medium.com, or policy.medium.com's Privacy/Rules/Terms
         # links) can incidentally match the article-slug regex. Those
